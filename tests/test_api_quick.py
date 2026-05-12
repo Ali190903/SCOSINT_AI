@@ -1,12 +1,22 @@
-"""API endpoint test — phone scan."""
-import httpx
-import json
+"""Alias generator test."""
+import asyncio
+from src.plugins.alias.alias_generator_plugin import AliasGeneratorPlugin
+from src.core.models import Target, TargetType
 
-r = httpx.post("http://127.0.0.1:8000/api/v1/scan",
-               json={"value": "+994501234567", "type": "phone"},
-               timeout=30)
-d = r.json()
-print(f"Status: {d['status']}")
-print(f"Findings: {len(d['findings'])}")
-for f in d["findings"]:
-    print(f"  {f['finding_type']:15s} {f['value']}")
+
+async def main():
+    plugin = AliasGeneratorPlugin()
+
+    names = ["Muhammad Ali", "Hüseyn Əliyev", "Владимир Путин", "John Smith"]
+    for name in names:
+        target = Target(value=name, type=TargetType.NAME)
+        results = await plugin.execute(target)
+        print(f"\n{name} -> {len(results)} aliases:")
+        for f in results[:15]:
+            print(f"  {f.value}")
+        if len(results) > 15:
+            print(f"  ... +{len(results)-15} more")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
