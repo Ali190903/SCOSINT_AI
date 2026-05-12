@@ -73,3 +73,9 @@ select = ["E", "F", "W", "I", "N", "UP"]
 [tool.mypy]
 python_version = "3.11"
 strict = true
+
+[tool.pyright]
+pythonVersion = "3.11"
+venvPath = "."
+venv = ".venv"
+extraPaths = ["."]

@@ -1,24 +1,45 @@
-"""Real test — WhatsMyName plugin-i 'torvalds' username-i ilə sınayır."""
+"""Real test — Sherlock + WhatsMyName plugin-lərini birlikdə sınayır."""
 import asyncio
-from src.plugins.username.whatsmyname_plugin import WhatsMyNamePlugin
+import time
+from src.core.plugin_manager import PluginManager
 from src.core.models import Target, TargetType
 
 
 async def main():
-    plugin = WhatsMyNamePlugin()
+    manager = PluginManager()
+    loaded = manager.discover_plugins()
+    print(f"Loaded {loaded} plugins:")
+    for name, meta in manager.all_plugins.items():
+        status = "ON" if manager.is_enabled(name) else "OFF"
+        print(f"  [{status}] {meta.name:20s} ({meta.category.value}, {meta.execution_mode.value})")
+
+    print("\n" + "=" * 60)
     target = Target(value="torvalds", type=TargetType.USERNAME)
+    print(f"Scanning: {target.value} ({target.type.value})")
+    print("=" * 60)
 
-    print(f"Scanning username: {target.value}")
-    print(f"Plugin: {plugin.meta.name} v{plugin.meta.version}")
-    print("-" * 60)
+    start = time.monotonic()
+    result = await manager.execute_scan([target])
+    elapsed = round(time.monotonic() - start, 1)
 
-    results = await plugin.execute(target)
+    print(f"\nResults: {result.findings_count} findings in {elapsed}s")
+    print(f"Plugins used: {', '.join(result.plugins_executed)}")
+    print(f"Status: {result.status.value}")
 
-    print(f"\nFOUND {len(results)} profiles:\n")
-    for f in sorted(results, key=lambda x: x.confidence, reverse=True):
-        site = f.raw_data.get("site_name", "?")
-        cat = f.raw_data.get("category", "?")
-        print(f"  [{cat:10s}] {site:25s} {f.value}")
+    if result.errors:
+        print(f"Errors: {result.errors}")
+
+    # Platforma əsasında qruplaşdır
+    platforms = {}
+    for f in result.findings:
+        key = f.raw_data.get("site_name", f.platform)
+        if key not in platforms:
+            platforms[key] = f
+
+    print(f"\nUnique platforms: {len(platforms)}")
+    for name, f in sorted(platforms.items()):
+        src = f.raw_data.get("source", f.source_plugin)
+        print(f"  {name:25s} [{src:12s}] {f.value}")
 
 
 if __name__ == "__main__":
