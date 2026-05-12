@@ -16,6 +16,7 @@ https://disqus.com/torvalds
 https://hub.docker.com/u/torvalds/
 https://dribbble.com/torvalds
 https://www.duolingo.com/profile/torvalds
+https://www.flickr.com/people/torvalds
 https://flipboard.com/@torvalds
 https://www.freelancer.com/u/torvalds
 https://freesound.org/people/torvalds/
@@ -75,6 +76,7 @@ https://www.wykop.pl/ludzie/torvalds
 https://xboxgamertag.com/search/torvalds
 https://www.couchsurfing.com/people/torvalds
 http://dating.ru/torvalds
+https://devrant.com/users/torvalds
 https://www.drive2.ru/users/torvalds
 https://www.fl.ru/users/torvalds
 https://www.geocaching.com/p/default.aspx?u=torvalds
@@ -88,4 +90,4 @@ https://pikabu.ru/@torvalds
 https://www.pinterest.com/torvalds/
 https://www.threads.net/@torvalds
 https://wowhead.com/user=torvalds
-Total Websites Username Detected On : 90
+Total Websites Username Detected On : 92
