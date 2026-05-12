@@ -2,9 +2,9 @@
 SCOSINT_AI Plugin Base — Plugin Interface Contract
 
 WHY: Bu fayl bütün OSINT plugin-lərin "kontraktı"dır. Hər plugin bu
-interface-i implement etməlidir. typing.Protocol istifadə edirik (ABC yox)
-çünki structural subtyping verir — plugin class-ı birbaşa inherit etmədən
-də uyğun sayılır. Bu da plugin-lərin core-dan tam müstəqil olmasını təmin edir.
+ABC-ni inherit etməlidir. ABC seçildi (Protocol yox) çünki plugin
+developer-lərə helper metodlar (run_subprocess, make_finding) miras
+olaraq verilir — Protocol buna imkan vermir.
 
 DESIGN DECISION: execute() async-dir çünki OSINT əməliyyatları I/O-bound-dur
 (HTTP, subprocess, browser). accepts() isə sync-dir çünki sadəcə type yoxlamasıdır.
@@ -94,14 +94,12 @@ class BasePlugin(ABC):
         effective_timeout = timeout or self.meta.timeout_seconds
 
         try:
-            result = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    timeout=effective_timeout,
-                ),
+            result = await asyncio.to_thread(
+                subprocess.run,
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=effective_timeout,
             )
 
             if parse_json and result.returncode == 0 and result.stdout.strip():

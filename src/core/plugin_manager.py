@@ -20,6 +20,7 @@ import importlib
 import inspect
 import pkgutil
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -218,9 +219,7 @@ class PluginManager:
             ScanResult — bütün tapıntılar, xətalar, statistikalar
         """
         result = ScanResult(targets=targets, status=ScanStatus.RUNNING)
-        result.started_at = __import__("datetime").datetime.now(
-            __import__("datetime").timezone.utc
-        )
+        result.started_at = datetime.now(timezone.utc)
 
         start_time = time.monotonic()
 
@@ -255,10 +254,8 @@ class PluginManager:
         # Nəticə
         elapsed = time.monotonic() - start_time
         result.duration_seconds = round(elapsed, 2)
-        result.status = ScanStatus.COMPLETED if not result.errors else ScanStatus.COMPLETED
-        result.completed_at = __import__("datetime").datetime.now(
-            __import__("datetime").timezone.utc
-        )
+        result.status = ScanStatus.COMPLETED if not result.errors else ScanStatus.FAILED
+        result.completed_at = datetime.now(timezone.utc)
 
         logger.info(
             "scan_completed",
