@@ -14,6 +14,7 @@ Quraşdırılmayıbsa plugin avtomatik skip olur.
 from __future__ import annotations
 
 import json
+import os
 import sys
 
 import structlog
@@ -54,69 +55,77 @@ class MaigretPlugin(BasePlugin):
         if not username:
             return []
 
+        import tempfile
+        import os
+        
+        # Nəticə üçün müvəqqəti qovluq yaradırıq
+        tmp_dir = tempfile.mkdtemp(prefix="maigret_")
+        
+        # Maigret `--json simple` olanda `report_{username}_simple.json` yaradır
+        expected_report_path = os.path.join(tmp_dir, f"report_{username}_simple.json")
+
         cmd = [
             sys.executable, "-m", "maigret",
             username,
-            "--json", "nul",  # Windows: /dev/null əvəzi
+            "--no-progressbar",
+            "--json", "simple",
+            "--folderoutput", tmp_dir,
             "--no-color",
             "--timeout", "10",
         ]
 
-        logger.info("maigret_scan_start", username=username)
-        result = await self.run_subprocess(cmd, parse_json=False)
+        logger.info("maigret_scan_start", username=username, tmp_dir=tmp_dir)
+        
+        # Windows-da unicode çöküşünün qarşısını almaq üçün UTF-8 məcbur edilir
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
+        
+        result = await self.run_subprocess(cmd, parse_json=False, env=env)
 
-        if hasattr(result, "returncode"):
-            if result.stderr and "Command not found" in result.stderr:
-                logger.warning("maigret_not_installed")
-                return []
-            if result.stderr and "No module named" in result.stderr:
-                logger.warning("maigret_not_installed", stderr=result.stderr[:100])
-                return []
+        findings = []
+        try:
+            if os.path.exists(expected_report_path) and os.path.getsize(expected_report_path) > 0:
+                with open(expected_report_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    findings = self._parse_json(data, username)
+        except Exception as e:
+            logger.error("maigret_json_parse_error", error=str(e))
+        finally:
+            # Faylı və qovluğu mütləq silirik
+            if os.path.exists(expected_report_path):
+                os.remove(expected_report_path)
+            try:
+                os.rmdir(tmp_dir)
+            except OSError:
+                pass
 
-        stdout = result.stdout if hasattr(result, "stdout") else str(result)
-        findings = self._parse_output(stdout, username)
         logger.info("maigret_scan_complete", username=username, found=len(findings))
         return findings
 
-    def _parse_output(self, output: str, username: str) -> list[Finding]:
-        """Maigret text çıxışını parse edir.
-
-        Format:
-        [+] site_name: url
-        [-] site_name: Not found
-        """
+    def _parse_json(self, data: dict, username: str) -> list[Finding]:
+        """Maigret JSON çıxışını parse edir."""
         findings = []
-
-        for line in output.splitlines():
-            line = line.strip()
-            if not line:
+        
+        # Maigret simple JSON formatı: {"SiteName": {"status": {"status": "Claimed", "url": "..."}}}
+        for site_name, info in data.items():
+            if not isinstance(info, dict):
                 continue
-
-            # [+] — profil tapıldı
-            if "[+]" in line:
-                parts = line.split("[+]", 1)
-                if len(parts) < 2:
-                    continue
-                rest = parts[1].strip()
-
-                # "SiteName: URL" və ya "SiteName - URL"
-                for sep in [":", " - "]:
-                    if sep in rest:
-                        site_part, url_part = rest.split(sep, 1)
-                        site_name = site_part.strip()
-                        url = url_part.strip()
-                        if url.startswith("http"):
-                            findings.append(self.make_finding(
-                                platform=site_name.lower().replace(" ", "_"),
-                                finding_type=FindingType.PROFILE_URL,
-                                value=url,
-                                confidence=0.85,
-                                url=url,
-                                raw_data={
-                                    "site_name": site_name,
-                                    "source": "maigret",
-                                },
-                            ))
-                            break
+                
+            status_obj = info.get("status", {})
+            if status_obj.get("status") in ("Found", "Claimed"):
+                url = status_obj.get("url", info.get("url_user", ""))
+                if url.startswith("http"):
+                    findings.append(self.make_finding(
+                        platform=site_name.lower().replace(" ", "_"),
+                        finding_type=FindingType.PROFILE_URL,
+                        value=url,
+                        confidence=0.9,
+                        url=url,
+                        raw_data={
+                            "site_name": site_name,
+                            "source": "maigret",
+                        },
+                    ))
 
         return findings

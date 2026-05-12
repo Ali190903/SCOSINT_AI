@@ -76,6 +76,7 @@ class BasePlugin(ABC):
         cmd: list[str],
         timeout: int | None = None,
         parse_json: bool = False,
+        env: dict[str, str] | None = None,
     ) -> subprocess.CompletedProcess | dict | list:
         """GPLv3 alətləri subprocess olaraq çağırmaq üçün helper.
 
@@ -87,6 +88,7 @@ class BasePlugin(ABC):
             cmd: İcra ediləcək komanda (list formatında)
             timeout: Saniyə cinsindən timeout (None = plugin meta timeout)
             parse_json: True olsa, stdout-u JSON olaraq parse edir
+            env: Custom environment variables (Optional)
 
         Returns:
             CompletedProcess və ya parse edilmiş JSON dict/list
@@ -100,6 +102,7 @@ class BasePlugin(ABC):
                 capture_output=True,
                 text=True,
                 timeout=effective_timeout,
+                env=env,
             )
 
             if parse_json and result.returncode == 0 and result.stdout.strip():
