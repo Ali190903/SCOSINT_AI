@@ -50,84 +50,62 @@ class SherlockPlugin(BasePlugin):
         username = target.value.strip()
         if not username:
             return []
+            
         import sys
+        import os
+        import tempfile
+        import csv
+
+        tmp_dir = tempfile.mkdtemp(prefix="sherlock_")
+        # Sherlock CSV faylını avtomatik olaraq {username}.csv kimi adlandırır
+        csv_path = os.path.join(tmp_dir, f"{username}.csv")
 
         cmd = [
             sys.executable, "-m", "sherlock_project",
             username,
-            "--print-found",
+            "--csv",
+            "--folderoutput", tmp_dir,
             "--timeout", "10",
             "--no-color",
         ]
 
-        logger.info("sherlock_scan_start", username=username)
-        result = await self.run_subprocess(cmd, parse_json=False)
+        logger.info("sherlock_scan_start", username=username, tmp_dir=tmp_dir)
+        
+        # Windows-da unicode çöküşlərinin qarşısını almaq üçün qlobal UTF-8 ayarı
+        env = os.environ.copy()
+        env["PYTHONIOENCODING"] = "utf-8"
+        env["PYTHONUTF8"] = "1"
+        
+        result = await self.run_subprocess(cmd, parse_json=False, env=env)
 
-        if hasattr(result, "returncode") and result.returncode != 0:
-            # JSON parse birbaşa cəhd edək — bəzi versiyalarda exit code fərqlidir
-            if not result.stdout.strip():
-                logger.warning("sherlock_no_output", stderr=result.stderr[:200] if result.stderr else "")
-                return []
-
-        # Sherlock JSON output-u parse et
-        findings = self._parse_output(result.stdout if hasattr(result, "stdout") else str(result), username)
-        logger.info("sherlock_scan_complete", username=username, found=len(findings))
-        return findings
-
-    def _parse_output(self, output: str, username: str) -> list[Finding]:
-        """Sherlock stdout-unu parse edib Finding-lərə çevirir.
-
-        Sherlock --json - formatı:
-        {"sitename": {"url_user": "...", "status": "Claimed", ...}, ...}
-        """
         findings = []
-
         try:
-            data = json.loads(output)
-        except (json.JSONDecodeError, TypeError):
-            # JSON olmayan çıxışı sətir-sətir parse et
-            return self._parse_text_output(output, username)
+            if os.path.exists(csv_path) and os.path.getsize(csv_path) > 0:
+                with open(csv_path, "r", encoding="utf-8") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        # Sherlock CSV formatı: username,name,url_main,url_user,exists,http_status,response_time_s
+                        # Əgər csv output formalaşıbsa, o deməkdir ki profil tapılıb (exists=yes)
+                        url = row.get("url_user", "")
+                        site = row.get("name", "Unknown")
+                        if url.startswith("http"):
+                            findings.append(self.make_finding(
+                                platform=site.lower().replace(" ", "_"),
+                                finding_type=FindingType.PROFILE_URL,
+                                value=url,
+                                confidence=0.85,  # Sherlock-da false positive ehtimalı Maigretdən az da olsa var
+                                url=url,
+                                raw_data={"site_name": site, "source": "sherlock"},
+                            ))
+        except Exception as e:
+            logger.error("sherlock_csv_parse_error", error=str(e))
+        finally:
+            if os.path.exists(csv_path):
+                os.remove(csv_path)
+            try:
+                os.rmdir(tmp_dir)
+            except OSError:
+                pass
 
-        if isinstance(data, dict):
-            for site_name, info in data.items():
-                if not isinstance(info, dict):
-                    continue
-                status = info.get("status", "")
-                if status == "Claimed":
-                    url = info.get("url_user", "")
-                    if url:
-                        findings.append(self.make_finding(
-                            platform=site_name.lower(),
-                            finding_type=FindingType.PROFILE_URL,
-                            value=url,
-                            confidence=0.9,
-                            url=url,
-                            raw_data={"site_name": site_name, "source": "sherlock"},
-                        ))
-
-        return findings
-
-    def _parse_text_output(self, output: str, username: str) -> list[Finding]:
-        """JSON parse uğursuz olsa, mətn çıxışını parse et.
-
-        Sherlock text output formatı:
-        [+] SiteName: https://site.com/username
-        """
-        findings = []
-        for line in output.splitlines():
-            line = line.strip()
-            if line.startswith("[+]") or line.startswith("[*]"):
-                parts = line.split(":", 1)
-                if len(parts) == 2:
-                    site_part = parts[0].replace("[+]", "").replace("[*]", "").strip()
-                    url = parts[1].strip()
-                    if url.startswith("http"):
-                        findings.append(self.make_finding(
-                            platform=site_part.lower(),
-                            finding_type=FindingType.PROFILE_URL,
-                            value=url,
-                            confidence=0.85,
-                            url=url,
-                            raw_data={"site_name": site_part, "source": "sherlock"},
-                        ))
+        logger.info("sherlock_scan_complete", username=username, found=len(findings))
         return findings

@@ -120,50 +120,41 @@ class HIBPPlugin(BasePlugin):
         return findings
 
     async def _check_free_breach(self, email: str) -> list[Finding]:
-        """Pulsuz breach yoxlaması — breach.directory API."""
+        """Pulsuz breach yoxlaması — LeakCheck.io Public API."""
         findings = []
 
         try:
             async with httpx.AsyncClient(timeout=15) as client:
-                # breach.directory — pulsuz, API key lazım deyil
+                # Leakcheck pulsuz ictimai axtarış, API key tələb etmir
                 resp = await client.get(
-                    f"https://breach.directory/api/email/{email}",
-                    headers={"User-Agent": "SCOSINT-AI"},
+                    f"https://leakcheck.io/api/public?check={email}",
+                    headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SCOSINT-AI"},
                 )
 
                 if resp.status_code == 200:
                     data = resp.json()
-                    if data.get("found", False):
+                    if data.get("success") and data.get("found", 0) > 0:
                         sources = data.get("sources", [])
                         for source in sources:
+                            name = source.get("name", "Unknown")
+                            date = source.get("date", "Unknown date")
+                            
                             findings.append(self.make_finding(
-                                platform=source.lower() if isinstance(source, str) else "unknown",
+                                platform=name.lower().replace(" ", "_"),
                                 finding_type=FindingType.BREACH,
-                                value=f"Breach detected: {source}",
+                                value=f"Sızma (Breach): {name} [{date}]",
                                 confidence=0.9,
                                 raw_data={
-                                    "source_name": source,
+                                    "source_name": name,
+                                    "breach_date": date,
                                     "email": email,
-                                    "source": "breach_directory",
-                                },
-                            ))
-
-                        if not sources and data.get("found"):
-                            findings.append(self.make_finding(
-                                platform="breach_directory",
-                                finding_type=FindingType.BREACH,
-                                value=f"Email found in data breaches",
-                                confidence=0.7,
-                                raw_data={
-                                    "email": email,
-                                    "result": data,
-                                    "source": "breach_directory",
+                                    "source": "leakcheck_public",
                                 },
                             ))
 
         except httpx.ConnectError:
             pass  # Servis əlçatan deyil — skip
         except Exception as e:
-            logger.error("breach_check_error", error=str(e))
+            logger.error("leakcheck_api_error", error=str(e))
 
         return findings
